@@ -1,0 +1,89 @@
+{
+  "cancellation_rebooking": {
+    "trigger": "flight cancelled by the airline",
+    "customer_choice": true,
+    "options": [
+      {
+        "id": "REBOOK",
+        "description": "Free rebooking on the next available flight within 24 hours",
+        "window_hours": 24,
+        "charge": 0
+      },
+      {
+        "id": "REFUND",
+        "description": "Full refund"
+      }
+    ]
+  },
+  "delay_compensation": {
+    "tiers": [
+      {
+        "id": "UNDER_3H",
+        "min_delay_hours": 0,
+        "max_delay_hours_exclusive": 3,
+        "entitlements": ["MEAL_VOUCHER"],
+        "meal_voucher_amount_inr": 500
+      },
+      {
+        "id": "FROM_3H",
+        "min_delay_hours": 3,
+        "max_delay_hours_exclusive": 5,
+        "entitlements": ["MEAL_VOUCHER", "LOUNGE_ACCESS"]
+      },
+      {
+        "id": "FROM_5H",
+        "min_delay_hours": 5,
+        "max_delay_hours_exclusive": null,
+        "entitlements": ["MEAL_VOUCHER", "LOUNGE_ACCESS", "HOTEL_ACCOMMODATION"]
+      }
+    ],
+    "hotel_accommodation": {
+      "covers": "delayed hours only",
+      "covers_full_night": false
+    }
+  },
+  "refund_processing": {
+    "applies_to": "airline-caused cancellations",
+    "amount": "full",
+    "processing_time": "within 7 business days",
+    "destination": "original payment method only"
+  },
+  "fare_difference": {
+    "applies_to": "voluntary rebooking on a higher-fare flight that is not airline-caused",
+    "customer_pays_difference": true,
+    "agent_waiver_limit_inr": 1500,
+    "above_limit_requires": "supervisor approval"
+  },
+  "loyalty": {
+    "Gold": {
+      "priority_rebooking": true,
+      "first_access_to_next_available_seats": true,
+      "additional_compensation": false
+    },
+    "Platinum": {
+      "priority_rebooking": true,
+      "first_access_to_next_available_seats": true,
+      "additional_compensation": false
+    },
+    "Silver": {
+      "priority_rebooking": false,
+      "first_access_to_next_available_seats": false,
+      "additional_compensation": false
+    }
+  },
+  "allowed_agent_actions": [
+    "Rebook the customer on the next available flight within 24 hours at no charge when the disruption is airline-caused",
+    "Issue meal vouchers and lounge access according to the delay compensation rule",
+    "Arrange hotel accommodation for the delayed-hours portion when the delay qualifies",
+    "Initiate a refund request for an airline-caused cancellation",
+    "Provide the customer's own booking and flight status information"
+  ],
+  "escalation_required_for": [
+    "Compensation beyond the stated policy amounts",
+    "Waiving a fare difference above INR 1,500",
+    "Exceptions for non-airline-caused disruptions, such as a customer missing the flight",
+    "Threats of legal action",
+    "Formal complaints",
+    "Refunds to a payment method different from the original payment method"
+  ]
+}

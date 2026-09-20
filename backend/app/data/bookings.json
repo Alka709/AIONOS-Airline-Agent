@@ -1,0 +1,65 @@
+{
+  "SK4821X": {
+    "pnr": "SK4821X",
+    "flights": [
+      {
+        "flight_number": "SK-204",
+        "route": { "from": "Delhi", "to": "Goa" },
+        "date": "2026-09-23",
+        "date_label": "Wednesday, 23 September 2026",
+        "scheduled_departure": "18:40",
+        "status": "cancelled",
+        "disruption_reason": "operational reasons",
+        "airline_caused": true,
+        "delay_hours": null,
+        "new_departure": null
+      },
+      {
+        "flight_number": null,
+        "route": { "from": "Goa", "to": "Delhi" },
+        "date": "2026-09-25",
+        "date_label": "Friday, 25 September 2026",
+        "scheduled_departure": "16:20",
+        "status": "unaffected",
+        "disruption_reason": null,
+        "airline_caused": false,
+        "delay_hours": null,
+        "new_departure": null
+      }
+    ]
+  },
+  "TR1190B": {
+    "pnr": "TR1190B",
+    "flights": [
+      {
+        "flight_number": "SK-118",
+        "route": { "from": "Mumbai", "to": "Bengaluru" },
+        "date": "2026-09-23",
+        "date_label": "Wednesday, 23 September 2026",
+        "scheduled_departure": "07:10",
+        "status": "delayed",
+        "disruption_reason": null,
+        "airline_caused": true,
+        "delay_hours": 4,
+        "new_departure": "11:10"
+      }
+    ]
+  },
+  "WL7742": {
+    "pnr": "WL7742",
+    "flights": [
+      {
+        "flight_number": "SK-305",
+        "route": { "from": "Delhi", "to": "Hyderabad" },
+        "date": "2026-09-23",
+        "date_label": "Wednesday, 23 September 2026",
+        "scheduled_departure": "14:00",
+        "status": "delayed",
+        "disruption_reason": null,
+        "airline_caused": true,
+        "delay_hours": 6,
+        "new_departure": "20:00"
+      }
+    ]
+  }
+}
