@@ -7,7 +7,6 @@ actions the deterministic policy engine marked as allowed.
 
 from __future__ import annotations
 
-import uuid
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -42,14 +41,9 @@ class ActionResult(BaseModel):
     action: str
     label: str
     status: str
-    reference: str
     detail: str
     simulated: bool = True
     details: Dict[str, Any] = Field(default_factory=dict)
-
-
-def _reference(prefix: str, pnr: str) -> str:
-    return f"{prefix}-{pnr}-{uuid.uuid4().hex[:6].upper()}"
 
 
 def execute(
@@ -79,7 +73,6 @@ def execute(
                     action=action,
                     label=ACTION_LABELS[action],
                     status="initiated",
-                    reference=_reference("RFD", pnr),
                     detail=(
                         "Full refund requested for the cancelled flight. Refunds are processed "
                         "within 7 business days to the original payment method."
@@ -106,7 +99,6 @@ def execute(
                     action=action,
                     label=ACTION_LABELS[action],
                     status="requested",
-                    reference=_reference("RBK", pnr),
                     detail=detail,
                     details=details,
                 )
@@ -118,7 +110,6 @@ def execute(
                     action=action,
                     label=ACTION_LABELS[action],
                     status="issued",
-                    reference=_reference("MEAL", pnr),
                     detail=(
                         f"₹{amount:,} meal voucher added to your booking."
                         if amount
@@ -133,7 +124,6 @@ def execute(
                     action=action,
                     label=ACTION_LABELS[action],
                     status="issued",
-                    reference=_reference("LNG", pnr),
                     detail="Lounge access added to your booking for today's departure.",
                     details=details,
                 )
@@ -145,7 +135,6 @@ def execute(
                     action=action,
                     label=ACTION_LABELS[action],
                     status="arranged",
-                    reference=_reference("HTL", pnr),
                     detail=(
                         f"Hotel accommodation arranged to cover the {hours}-hour delay period."
                         if hours
@@ -161,7 +150,6 @@ def execute(
                     action=action,
                     label=ACTION_LABELS[action],
                     status="applied",
-                    reference=_reference("WVR", pnr),
                     detail=(
                         f"Fare difference of ₹{amount:,.0f} waived."
                         if amount is not None
