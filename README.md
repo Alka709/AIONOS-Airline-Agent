@@ -1,4 +1,4 @@
-# Customer-Facing Resolution Agent ✈️
+# Customer-Facing Resolution Agent 
 
 AI-powered airline disruption support agent built for the **AIONOS Assignment 3**.
 
