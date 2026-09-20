@@ -60,16 +60,29 @@ def get_llm(temperature: float = 0.0):
 
 _AMOUNT_RE = re.compile(r"(?:₹|rs\.?|inr)\s*([\d][\d,]*(?:\.\d+)?)", re.IGNORECASE)
 _PLAIN_AMOUNT_RE = re.compile(r"([\d][\d,]*(?:\.\d+)?)\s*(?:rupees|rs\b|inr)", re.IGNORECASE)
+_COSTS_MORE_RE = re.compile(r"(?:costs?|difference(?:\s+of)?|extra)\s*(?:₹|rs\.?|inr)?\s*([\d][\d,]*(?:\.\d+)?)", re.IGNORECASE)
+_AMOUNT_MORE_RE = re.compile(r"([\d][\d,]*(?:\.\d+)?)\s*(?:more|extra|difference)", re.IGNORECASE)
+_BARE_NUMBER_RE = re.compile(r"^\s*([\d][\d,]*(?:\.\d+)?)\s*$")
 
 
-def _extract_amount(text: str) -> Optional[float]:
-    for pattern in (_AMOUNT_RE, _PLAIN_AMOUNT_RE):
+def _extract_amount(text: str, history: Optional[List[Dict[str, str]]] = None) -> Optional[float]:
+    for pattern in (_AMOUNT_RE, _PLAIN_AMOUNT_RE, _COSTS_MORE_RE, _AMOUNT_MORE_RE):
         match = pattern.search(text)
         if match:
             try:
                 return float(match.group(1).replace(",", ""))
             except ValueError:
                 continue
+    # If the whole message is just a bare number, check whether the recent
+    # conversation context suggests the customer is supplying a fare difference.
+    bare = _BARE_NUMBER_RE.match(text)
+    if bare and history:
+        recent = " ".join(t.get("content", "") for t in history[-4:])
+        if any(kw in recent.lower() for kw in ("fare difference", "fare diff", "costs more", "higher fare", "rebook", "rebooking", "amount", "difference")):
+            try:
+                return float(bare.group(1).replace(",", ""))
+            except ValueError:
+                pass
     return None
 
 
@@ -77,11 +90,11 @@ def _contains(text: str, *needles: str) -> bool:
     return any(needle in text for needle in needles)
 
 
-def fallback_understand(message: str, booking: Dict[str, Any]) -> StructuredRequest:
+def fallback_understand(message: str, booking: Dict[str, Any], history: Optional[List[Dict[str, str]]] = None) -> StructuredRequest:
     """Keyword reader used when Gemini is not configured."""
 
     text = message.lower()
-    amount = _extract_amount(text)
+    amount = _extract_amount(text, history=history)
     actions: List[RequestedAction] = []
     signals: List[str] = []
 
@@ -99,9 +112,19 @@ def fallback_understand(message: str, booking: Dict[str, Any]) -> StructuredRequ
     wants_rebook = _contains(
         text, "rebook", "re-book", "another flight", "different flight", "next flight",
         "put me on", "other flight", "later flight", "alternative flight", "switch flight",
+        "change flight", "book me on", "move me to",
     )
-    higher_fare = _contains(text, "costs more", "more expensive", "higher fare", "costing", "costs ₹", "more than my")
-    wants_waiver = _contains(text, "waive", "waiver", "cover the difference", "absorb", "don't want to pay", "not paying", "free of charge", "at no cost")
+    higher_fare = _contains(
+        text, "costs more", "more expensive", "higher fare", "costing", "costs ₹", "costs rs",
+        "costs inr", "more than my", "higher cost", "more costly", "costs ",
+    ) or ("difference" in text and not wants_refund) or (amount is not None and _contains(text, "more", "higher"))
+    
+    wants_waiver = _contains(
+        text, "waive", "waiver", "cover the difference", "absorb the difference", "absorb",
+        "don't want to pay the difference", "not paying the difference", "waive that difference",
+        "waive the difference", "waive it", "waive that", "waive this", "drop the difference",
+        "drop the charge", "waive the charge", "waive the fee",
+    )
     wants_upgrade = _contains(text, "upgrade", "business class", "first class")
     wants_meal = _contains(text, "meal", "food", "voucher", "eat", "hungry")
     wants_lounge = _contains(text, "lounge")
@@ -134,18 +157,19 @@ def fallback_understand(message: str, booking: Dict[str, Any]) -> StructuredRequ
                 notes="Customer asked for hotel accommodation.",
             )
         )
-    if wants_rebook or (higher_fare and not wants_upgrade):
-        actions.append(
-            RequestedAction(
-                action_type=ActionType.REBOOKING,
-                target_flight=target_flight,
-                higher_fare=higher_fare,
-                fare_difference=amount if higher_fare else None,
-                waiver_requested=wants_waiver,
-                notes="Customer asked to be moved to another flight.",
+    if wants_rebook or higher_fare or (wants_waiver and ("flight" in text or "difference" in text or "rebook" in text)):
+        if not wants_upgrade:
+            actions.append(
+                RequestedAction(
+                    action_type=ActionType.REBOOKING,
+                    target_flight=target_flight,
+                    higher_fare=higher_fare,
+                    fare_difference=amount if higher_fare else None,
+                    waiver_requested=wants_waiver,
+                    notes="Customer asked to be moved to another flight.",
+                )
             )
-        )
-    if wants_waiver:
+    if wants_waiver and (higher_fare or "difference" in text or "fare" in text or "fee" in text or "charge" in text or "cost" in text or amount is not None):
         actions.append(
             RequestedAction(
                 action_type=ActionType.FARE_DIFFERENCE_WAIVER,
@@ -247,7 +271,7 @@ def understand_request(state: AgentState) -> AgentState:
             structured = None
 
     if structured is None:
-        structured = fallback_understand(message, booking)
+        structured = fallback_understand(message, booking, history=list(history))
         trace.append("understand_request: fallback")
 
     # Which flight is this message about? A purely informational message may point at
@@ -295,17 +319,24 @@ def action_or_escalation(state: AgentState) -> AgentState:
     """Execute approved actions and raise an escalation when policy demands it."""
 
     decision = PolicyDecision(**state.get("policy_decision", {}))
+    executed_so_far: List[str] = list(state.get("executed_actions", []))
 
     results = action_executor.execute(
         pnr=state["pnr"],
         policy_decision=decision,
         target_flight=state.get("target_flight"),
+        executed_actions=executed_so_far,
     )
     escalation = escalation_service.handle(
         pnr=state["pnr"],
         policy_decision=decision,
         customer=state.get("customer"),
     )
+
+    # Accumulate newly-executed action types so subsequent turns know not to
+    # repeat them.  Only actions that actually produce a result card count.
+    newly_executed = [r.action for r in results]
+    state["executed_actions"] = executed_so_far + [a for a in newly_executed if a not in executed_so_far]
 
     state["action_results"] = [r.model_dump() for r in results]
     state["escalation_result"] = escalation.model_dump()
@@ -331,6 +362,65 @@ def _flight_phrase(flight: Optional[Dict[str, Any]]) -> str:
     return f"your {leg} flight on {date}"
 
 
+# Sentiment values that warrant an empathy opener.
+_NEGATIVE_SENTIMENTS = frozenset({"angry", "frustrated", "distressed", "upset", "worried"})
+
+# Keywords in the customer message that flag negative emotion even if sentiment
+# classification is neutral (for the fallback path).
+_EMOTION_KEYWORDS = (
+    "furious", "angry", "frustrated", "irritated", "upset", "annoyed",
+    "disappointed", "stressed", "worried", "unacceptable", "terrible",
+    "ridiculous", "ruined my", "this is outrageous", "this is awful",
+    "i'm livid", "i am livid",
+)
+
+
+def _needs_empathy(structured: Dict[str, Any], message: str, empathy_acknowledged: bool) -> bool:
+    """Return True if an empathy opener is appropriate for this turn."""
+    if empathy_acknowledged:
+        # Already acknowledged in a prior turn; only re-open if the new message
+        # itself is strongly emotional.
+        msg_lower = message.lower()
+        return any(kw in msg_lower for kw in _EMOTION_KEYWORDS)
+    sentiment = structured.get("customer_sentiment", "neutral")
+    if sentiment in _NEGATIVE_SENTIMENTS:
+        return True
+    msg_lower = message.lower()
+    return any(kw in msg_lower for kw in _EMOTION_KEYWORDS)
+
+
+def _empathy_line(flight: Optional[Dict[str, Any]], message: str) -> str:
+    """Return a short, context-appropriate empathy sentence."""
+    msg = message.lower()
+    status = (flight or {}).get("status", "")
+
+    # Tailor the empathy line to what actually happened.
+    if "cancel" in msg or status == "cancelled":
+        return (
+            "I'm sorry you've had to deal with this — a cancellation with no warning is genuinely disruptive, "
+            "and I want to get this sorted for you right now."
+        )
+    if "delay" in msg or status == "delayed":
+        return (
+            "I understand how frustrating an unexpected delay is, especially when it throws off your plans."
+        )
+    if "ridiculous" in msg or "unacceptable" in msg or "outrageous" in msg:
+        return (
+            "I hear you, and I completely understand why you feel this way. "
+            "Let me see exactly what I can do for you."
+        )
+    if "ruined" in msg:
+        return (
+            "I'm really sorry this has disrupted your trip — that's the last thing you need. "
+            "Let me work through what I can resolve right now."
+        )
+    # Generic negative-emotion opener.
+    return (
+        "I'm sorry you're going through this. I can see it's been a frustrating experience, "
+        "and I'll do my best to help."
+    )
+
+
 def fallback_response(state: AgentState) -> str:
     """Compose the reply from the deterministic decisions, without a model."""
 
@@ -340,13 +430,19 @@ def fallback_response(state: AgentState) -> str:
     escalation = state.get("escalation_result", {})
     structured = state.get("structured_request", {})
     flight = state.get("target_flight")
+    message = state.get("current_message", "")
+    empathy_acknowledged = bool(state.get("empathy_acknowledged", False))
 
-    sentiment = structured.get("customer_sentiment", "neutral")
     lines: List[str] = []
 
-    if sentiment in ("angry", "frustrated", "distressed"):
-        lines.append("I'm sorry, this is a frustrating way for a trip to start, and I want to sort out what I can right now.")
+    # ---- Empathy opener (at most once per session, only when warranted) ----
+    if _needs_empathy(structured, message, empathy_acknowledged):
+        lines.append(_empathy_line(flight, message))
+        # Signal to generate_response that empathy was given this turn so the
+        # state is updated after this function returns.
+        state["empathy_acknowledged"] = True
 
+    # ---- Flight status context ----
     status = (flight or {}).get("status")
     if status == "cancelled":
         lines.append(
@@ -365,9 +461,11 @@ def fallback_response(state: AgentState) -> str:
             f"{(flight or {}).get('scheduled_departure')}."
         )
 
+    # ---- Actions that were executed ----
     for action in actions:
         lines.append(action["detail"])
 
+    # ---- Policy decisions ----
     for item in decision.get("decisions", []):
         if item["action"] == "CANCELLATION_OPTIONS" and item["status"] == "allowed":
             lines.append(
@@ -377,6 +475,7 @@ def fallback_response(state: AgentState) -> str:
         if item["status"] == "denied":
             lines.append(item["reason"])
 
+    # ---- Loyalty note ----
     if str(customer.get("loyalty_tier")) in ("Gold", "Platinum") and any(
         d["action"] in ("REBOOKING", "CANCELLATION_OPTIONS") for d in decision.get("decisions", [])
     ):
@@ -385,6 +484,7 @@ def fallback_response(state: AgentState) -> str:
             "next-available seats."
         )
 
+    # ---- Escalation message ----
     if escalation.get("required"):
         lines.append(escalation.get("customer_message") or "")
 
@@ -397,6 +497,7 @@ def generate_response(state: AgentState) -> AgentState:
     llm = get_llm(temperature=0.3)
     text = ""
     trace = list(state.get("trace", []))
+    empathy_acknowledged = bool(state.get("empathy_acknowledged", False))
 
     if llm is not None:
         try:
@@ -409,16 +510,26 @@ def generate_response(state: AgentState) -> AgentState:
                 policy_decision=state.get("policy_decision", {}),
                 action_results=state.get("action_results", []),
                 escalation_result=state.get("escalation_result", {}),
+                empathy_acknowledged=empathy_acknowledged,
             )
             result = llm.invoke([("system", RESPONSE_SYSTEM_PROMPT), ("human", prompt)])
             text = (getattr(result, "content", "") or "").strip()
             if text:
                 trace.append("generate_response: gemini")
+                # Mark empathy as given if the current message had negative sentiment.
+                # The LLM follows the prompt rule to open with empathy when needed,
+                # so we update the flag here rather than trying to parse the text.
+                structured = state.get("structured_request", {})
+                message = state.get("current_message", "")
+                if _needs_empathy(structured, message, empathy_acknowledged):
+                    state["empathy_acknowledged"] = True
         except Exception as exc:  # pragma: no cover - network dependent
             logger.warning("Gemini response generation failed (%s); using fallback writer.", exc)
             text = ""
 
     if not text:
+        # fallback_response() sets state["empathy_acknowledged"] directly when it
+        # adds an opener, so we don't need to duplicate that logic here.
         text = fallback_response(state)
         trace.append("generate_response: fallback")
 

@@ -50,11 +50,19 @@ def execute(
     pnr: str,
     policy_decision: PolicyDecision,
     target_flight: Optional[Dict[str, Any]] = None,
+    executed_actions: Optional[List[str]] = None,
 ) -> List[ActionResult]:
-    """Execute every allowed action once, in the order the policy returned."""
+    """Execute every allowed action once, in the order the policy returned.
+
+    Actions listed in *executed_actions* have already been performed in a
+    previous turn of this conversation and must not be repeated.  Only the
+    newly-executed results are returned.
+    """
 
     results: List[ActionResult] = []
-    seen: set[str] = set()
+    # Pre-populate `seen` with actions already executed in earlier turns so
+    # they are not repeated in the current turn's response.
+    seen: set[str] = set(executed_actions or [])
     flight_number = (target_flight or {}).get("flight_number")
     flight_label = flight_number or "your booked flight"
 

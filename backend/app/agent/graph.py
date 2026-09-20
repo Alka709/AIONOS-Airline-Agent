@@ -46,8 +46,18 @@ def run_agent(
     booking: Dict[str, Any],
     message: str,
     history: Optional[List[Dict[str, str]]] = None,
+    executed_actions: Optional[List[str]] = None,
+    empathy_acknowledged: bool = False,
 ) -> Dict[str, Any]:
     """Run the full graph for one customer message and return the final state."""
 
-    state = new_state(pnr=pnr, customer=customer, booking=booking, message=message, history=history)
+    state = new_state(
+        pnr=pnr,
+        customer=customer,
+        booking=booking,
+        message=message,
+        history=history,
+        executed_actions=executed_actions,
+        empathy_acknowledged=empathy_acknowledged,
+    )
     return dict(get_compiled_graph().invoke(state))

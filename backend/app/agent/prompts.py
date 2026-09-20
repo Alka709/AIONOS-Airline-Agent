@@ -43,21 +43,31 @@ Rules for reading the message:
    - OTHER: anything that fits none of the above
 3. For a hotel request, set requested_duration to "full_night" when the customer asks for a whole
    night or an overnight stay, and "delay_hours" when they ask for the delay period only.
-4. For a rebooking request, set higher_fare to true when the customer mentions a flight that costs
-   more, and record the amount in fare_difference when they state one in rupees.
-5. Set waiver_requested to true when the customer asks for a charge to be dropped, and also add a
-   separate FARE_DIFFERENCE_WAIVER entry.
+4. For a rebooking request, set higher_fare to true when the customer mentions that the flight
+   costs more, and record the amount in fare_difference when they state one in rupees. Do NOT
+   set higher_fare to true or invent a fare difference unless the customer indicates the requested
+   flight costs more.
+5. Set waiver_requested to true ONLY when the customer explicitly asks to waive, cover, absorb, or
+   drop the fare difference or charge, and in that case also add a separate FARE_DIFFERENCE_WAIVER
+   entry. If the customer asks for a higher-fare flight without asking for the difference to be waived,
+   set waiver_requested to false and do NOT add a FARE_DIFFERENCE_WAIVER entry.
 6. Record escalation_signals when the message contains any of:
    - LEGAL_ACTION: mentions lawyers, courts, suing or legal action
    - FORMAL_COMPLAINT: says they will file or lodge a formal complaint
    - COMPENSATION_BEYOND_POLICY: asks for more than the policy provides, or for an exception
-   - FARE_WAIVER_ABOVE_LIMIT: asks for a large fare difference to be waived
+   - FARE_WAIVER_ABOVE_LIMIT: explicitly asks to waive a fare difference above INR 1,500 (do NOT
+     escalate simply because a higher-fare flight is requested or because a fare difference exists)
    - NON_AIRLINE_CAUSED_EXCEPTION: asks for an exception for something the airline did not cause,
      such as arriving late or missing the flight
    - ALTERNATE_REFUND_METHOD: asks for a refund to a different payment method
 7. target_flight may only be a flight number or leg that appears in the booking context below, or
    null. Never invent a flight number.
 8. Set needs_clarification to true only when you genuinely cannot tell what is being asked.
+9. When the customer sends a message that is ONLY a bare number (e.g. "1200") with no other words,
+   check the conversation history. If the previous exchange was about a fare difference, a rebooking
+   cost, or an amount to be waived, treat that bare number as the fare_difference value for the most
+   recent REBOOKING or FARE_DIFFERENCE_WAIVER request. Do not create a new action for it unless a
+   new action is genuinely being requested; instead, update the fare_difference on the existing type.
 
 Return only the structured object described by the schema."""
 

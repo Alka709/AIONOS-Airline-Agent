@@ -90,7 +90,6 @@ class ActionCard(BaseModel):
     action: str
     label: str
     status: str
-    reference: str
     detail: str
     simulated: bool = True
 

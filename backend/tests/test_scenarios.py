@@ -106,6 +106,22 @@ def test_meher_six_hour_delay_entitlements(client, meher_session):
     }
 
 
+def test_meher_higher_fare_without_waiver_does_not_escalate(client, meher_session):
+    body = send(client, "WL7742", meher_session["session_token"], "I want a flight that costs ₹2,000 more.")
+    assert body["escalation"]["required"] is False
+    rebooking = next(a for a in body["actions"] if a["action"] == ActionType.REBOOKING)
+    assert "₹2,000" in rebooking["detail"]
+    assert "payable by you" in rebooking["detail"]
+
+
+def test_priya_higher_fare_without_waiver_charges_fare_difference(client, priya_session):
+    body = send(client, "SK4821X", priya_session["session_token"], "I want a flight that costs ₹3,000 more.")
+    assert body["escalation"]["required"] is False
+    rebooking = next(a for a in body["actions"] if a["action"] == ActionType.REBOOKING)
+    assert "₹3,000" in rebooking["detail"]
+    assert "payable by you" in rebooking["detail"]
+
+
 # -- Prohibited conversations ---------------------------------------------
 
 def test_legal_action_escalates_through_the_api(client, arvind_session):

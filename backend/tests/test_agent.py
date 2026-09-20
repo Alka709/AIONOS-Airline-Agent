@@ -63,6 +63,45 @@ def test_reader_detects_escalation_signals():
     assert EscalationSignal.FORMAL_COMPLAINT in fallback_understand("I will file a formal complaint.", booking).escalation_signals
 
 
+def test_reader_higher_fare_without_waiver():
+    booking = data_service.get_booking("WL7742")
+    structured = fallback_understand("I want a flight that costs ₹2,000 more.", booking)
+    rebooking = next(a for a in structured.requested_actions if a.action_type == ActionType.REBOOKING)
+    assert rebooking.higher_fare is True
+    assert rebooking.fare_difference == 2000
+    assert rebooking.waiver_requested is False
+    assert not any(a.action_type == ActionType.FARE_DIFFERENCE_WAIVER for a in structured.requested_actions)
+
+
+def test_reader_higher_fare_with_waiver():
+    booking = data_service.get_booking("WL7742")
+    structured = fallback_understand("I want the ₹2,000 difference waived.", booking)
+    rebooking = next(a for a in structured.requested_actions if a.action_type == ActionType.REBOOKING)
+    assert rebooking.higher_fare is True
+    assert rebooking.fare_difference == 2000
+    assert rebooking.waiver_requested is True
+    assert any(a.action_type == ActionType.FARE_DIFFERENCE_WAIVER for a in structured.requested_actions)
+
+
+def test_reader_ordinary_rebooking_does_not_assume_higher_fare():
+    booking = data_service.get_booking("SK4821X")
+    structured = fallback_understand("I want to rebook on another flight.", booking)
+    rebooking = next(a for a in structured.requested_actions if a.action_type == ActionType.REBOOKING)
+    assert rebooking.higher_fare is False
+    assert rebooking.fare_difference is None
+    assert rebooking.waiver_requested is False
+    assert not any(a.action_type == ActionType.FARE_DIFFERENCE_WAIVER for a in structured.requested_actions)
+
+
+def test_higher_fare_without_waiver_does_not_escalate():
+    state = run("WL7742", "I want a flight that costs ₹2,000 more.")
+    assert state["policy_decision"]["escalation_required"] is False
+    assert state["escalation_result"]["required"] is False
+    rebooking = next(a for a in state["action_results"] if a["action"] == ActionType.REBOOKING)
+    assert "₹2,000" in rebooking["detail"]
+    assert "payable by you" in rebooking["detail"]
+
+
 def test_executor_never_runs_a_denied_action():
     state = run("TR1190B", "Give me a hotel for tonight.")
     executed = {a["action"] for a in state["action_results"]}

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional, Set, TypedDict
 
 
 class AgentState(TypedDict, total=False):
@@ -14,6 +14,16 @@ class AgentState(TypedDict, total=False):
     # Conversation
     current_message: str
     conversation_history: List[Dict[str, str]]
+
+    # Actions already executed in PREVIOUS turns of this conversation.
+    # The action_or_escalation node reads this to avoid re-executing an
+    # action that was already carried out earlier in the same session.
+    executed_actions: List[str]
+
+    # Set to True once the agent has already expressed empathy/acknowledgement
+    # in a prior turn of this session. Used to suppress repetitive apologies
+    # on neutral follow-up messages.
+    empathy_acknowledged: bool
 
     # Node outputs
     target_flight: Optional[Dict[str, Any]]
@@ -34,6 +44,8 @@ def new_state(
     booking: Dict[str, Any],
     message: str,
     history: Optional[List[Dict[str, str]]] = None,
+    executed_actions: Optional[List[str]] = None,
+    empathy_acknowledged: bool = False,
 ) -> AgentState:
     return AgentState(
         pnr=pnr,
@@ -41,6 +53,8 @@ def new_state(
         booking=booking,
         current_message=message,
         conversation_history=list(history or []),
+        executed_actions=list(executed_actions or []),
+        empathy_acknowledged=empathy_acknowledged,
         target_flight=None,
         structured_request={},
         policy_decision={},
